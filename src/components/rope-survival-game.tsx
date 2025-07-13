@@ -605,12 +605,18 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   };
 
   const restartGame = () => {
+    // Reset player state
     setScore(0);
-    setAiScore(0);
     setLives(INITIAL_LIVES);
     setDeathCount(0);
-    setDifficulty(1);
     setCommentary('');
+    
+    // Reset AI state
+    setAiScore(0);
+    
+    // Reset shared state
+    setDifficulty(1);
+
     if (isPlayerControlled) {
       initializeSaws(1);
       fetchCommentary('gameStart');
@@ -672,7 +678,9 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
         {isPlayerControlled ? (
           <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">SCORE: {Math.floor(score)}</h1>
         ) : (
-          <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">AI SCORE: {Math.floor(aiScore)}</h1>
+          <div className="flex w-full justify-end">
+            <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">AI SCORE: {Math.floor(aiScore)}</h1>
+          </div>
         )}
         
         {isPlayerControlled && (
@@ -701,7 +709,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           </div>
       )}
       
-      <div className="relative w-full h-full">
+      <div className="relative w-full" style={{ height: GAME_HEIGHT }}>
         <canvas
           ref={canvasRef}
           width={GAME_WIDTH}
@@ -763,5 +771,3 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 };
 
 export default RopeSurvivalGame;
-
-    
