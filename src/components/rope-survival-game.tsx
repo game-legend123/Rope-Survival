@@ -34,19 +34,33 @@ interface RopeSurvivalGameProps {
   isPlayerControlled: boolean;
 }
 
-// A global event bus to share saw state
-const sawState = {
+// A global event bus to share game state
+const globalGameState = {
   saws: [] as Saw[],
-  listeners: new Set<(saws: Saw[]) => void>(),
+  isPaused: false,
+  sawListeners: new Set<(saws: Saw[]) => void>(),
+  pauseListeners: new Set<(isPaused: boolean) => void>(),
+  
   setSaws(saws: Saw[]) {
     this.saws = saws;
-    this.listeners.forEach(listener => listener(saws));
+    this.sawListeners.forEach(listener => listener(saws));
   },
-  subscribe(listener: (saws: Saw[]) => void) {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  subscribeSaws(listener: (saws: Saw[]) => void) {
+    this.sawListeners.add(listener);
+    return () => this.sawListeners.delete(listener);
   },
+
+  setPaused(isPaused: boolean) {
+    if (this.isPaused === isPaused) return;
+    this.isPaused = isPaused;
+    this.pauseListeners.forEach(listener => listener(isPaused));
+  },
+  subscribePaused(listener: (isPaused: boolean) => void) {
+    this.pauseListeners.add(listener);
+    return () => this.pauseListeners.delete(listener);
+  }
 };
+
 
 const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,18 +93,25 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   const [saws, setSaws] = useState<Saw[]>([]);
   
   useEffect(() => {
-    // Only the player-controlled component should manage saw state
+    // Player-controlled component manages the saw state
     if (isPlayerControlled) {
-      sawState.setSaws(saws);
+      globalGameState.setSaws(saws);
     }
   }, [saws, isPlayerControlled]);
 
   useEffect(() => {
-    const unsubscribe = sawState.subscribe((newSaws) => {
-      // All components listen for saw updates
+    const unsubscribeSaws = globalGameState.subscribeSaws((newSaws) => {
       setSaws(newSaws);
     });
-    return unsubscribe;
+    
+    const unsubscribePaused = globalGameState.subscribePaused((paused) => {
+        setGameState(paused ? GameState.Paused : GameState.Playing);
+    });
+
+    return () => {
+        unsubscribeSaws();
+        unsubscribePaused();
+    };
   }, []);
 
 
@@ -99,6 +120,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
   const fetchCommentary = useCallback(async (event: 'lostLife' | 'levelUp' | 'gameStart' | 'gameOver' | 'nearMiss', playerMessage?: string) => {
       if (!isPlayerControlled) return;
+      if (gameState === GameState.GameOver) return;
       const currentScore = Math.floor(score);
       try {
         const result = await getAICommentary({ score: currentScore, difficulty, event, playerMessage });
@@ -108,7 +130,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       } catch (e) {
         console.error(e);
       }
-  }, [score, difficulty, isPlayerControlled]);
+  }, [score, difficulty, isPlayerControlled, gameState]);
 
   const handlePlayerReply = (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,8 +174,8 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
                 break;
         }
 
-        const targetX = GAME_WIDTH / 2;
-        const targetY = GAME_HEIGHT / 2;
+        const targetX = ball.current.x + (Math.random() - 0.5) * 200; // Aim near the ball
+        const targetY = ball.current.y + (Math.random() - 0.5) * 200;
         const dx = targetX - newSaw.x;
         const dy = targetY - newSaw.y;
         const dist = Math.sqrt(dx*dx + dy*dy) || 1;
@@ -173,12 +195,13 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       const newSaws: Saw[] = [];
       const spawnEdges: ('left' | 'right')[] = ['left', 'left', 'right'];
 
-      for (const edge of spawnEdges) {
-          const newSaw = await createNewSaw(difficultyLevel, edge);
-          if (newSaw) newSaws.push(newSaw);
+      for (let i = 0; i < SAW_COUNT; i++) {
+        const edge = spawnEdges[i % spawnEdges.length];
+        const newSaw = await createNewSaw(difficultyLevel, edge);
+        if (newSaw) newSaws.push(newSaw);
       }
 
-      sawState.setSaws(newSaws);
+      globalGameState.setSaws(newSaws);
   }, [isPlayerControlled, createNewSaw]);
   
   const resetBall = () => {
@@ -266,7 +289,8 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
             if(isPlayerControlled) fetchCommentary('levelUp');
             
             const newPattern = await getNewSawPattern({ difficulty: currentDifficulty });
-            sawState.setSaws(sawState.saws.map(saw => ({
+            const currentSaws = globalGameState.saws;
+            globalGameState.setSaws(currentSaws.map(saw => ({
                 ...saw,
                 speedMultiplier: newPattern.speedMultiplier,
                 pattern: newPattern.pattern,
@@ -275,8 +299,13 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     };
     
     const interval = setInterval(manageGame, 2000); 
+    const commentaryInterval = setInterval(() => fetchCommentary('nearMiss'), 6000);
 
-    return () => clearInterval(interval);
+
+    return () => {
+        clearInterval(interval);
+        clearInterval(commentaryInterval);
+    }
   }, [gameState, difficulty, score, aiScore, fetchCommentary, isPlayerControlled, deathCount]);
 
   const updateBallExpression = useCallback((distance: number) => {
@@ -290,12 +319,12 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   }, [ballExpression]);
 
   const aiControlLogic = useCallback(() => {
-    if (sawState.saws.length === 0) return;
+    if (globalGameState.saws.length === 0) return;
 
-    let closestSaw = sawState.saws[0];
+    let closestSaw = globalGameState.saws[0];
     let minDistance = Infinity;
 
-    sawState.saws.forEach(saw => {
+    globalGameState.saws.forEach(saw => {
       const dist = Math.sqrt((ball.current.x - saw.x)**2 + (ball.current.y - saw.y)**2);
       if (dist < minDistance) {
         minDistance = dist;
@@ -343,7 +372,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx || gameState === GameState.GameOver) {
-        animationFrameId.current = requestAnimationFrame(gameLoop);
+      animationFrameId.current = requestAnimationFrame(gameLoop);
       return;
     }
     
@@ -352,7 +381,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
         aiControlLogic();
       }
       
-      const { x, y, px, py } = ball.current;
+      let { x, y, px, py } = ball.current;
       let vx = (x - px) * DAMPING;
       let vy = (y - py) * DAMPING;
       ball.current.px = x;
@@ -371,12 +400,19 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
       ball.current.x += offsetX;
       ball.current.y += offsetY;
+
+      // Keep ball within bounds
+      if (ball.current.x < BALL_RADIUS) ball.current.x = BALL_RADIUS;
+      if (ball.current.x > GAME_WIDTH - BALL_RADIUS) ball.current.x = GAME_WIDTH - BALL_RADIUS;
+      if (ball.current.y < BALL_RADIUS) ball.current.y = BALL_RADIUS;
+      if (ball.current.y > GAME_HEIGHT - BALL_RADIUS) ball.current.y = GAME_HEIGHT - BALL_RADIUS;
+
       
       let minDistanceToSaw = Infinity;
-      let nearMissCount = 0;
       let scoreGainedThisFrame = 0;
 
-      const updatedSaws = sawState.saws.map(saw => {
+      const currentSaws = [...globalGameState.saws];
+      const updatedSaws = currentSaws.map(saw => {
           let newSaw = { ...saw };
           newSaw.angle += 0.25;
           newSaw.time += deltaTime;
@@ -385,6 +421,21 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           const homingFactor = 0.005 * speed;
           newSaw.vx += (ball.current.x - newSaw.x) * homingFactor * 0.1;
           newSaw.vy += (ball.current.y - newSaw.y) * homingFactor * 0.1;
+
+          // Repulsion from other saws
+          currentSaws.forEach(otherSaw => {
+            if (saw.id !== otherSaw.id) {
+                const repDx = newSaw.x - otherSaw.x;
+                const repDy = newSaw.y - otherSaw.y;
+                let repDist = Math.sqrt(repDx*repDx + repDy*repDy) || 1;
+                const minRepelDist = SAW_RADIUS * 4; 
+                if (repDist < minRepelDist) {
+                    const repelForce = (minRepelDist - repDist) / minRepelDist * 0.2; // increased force
+                    newSaw.vx += (repDx / repDist) * repelForce;
+                    newSaw.vy += (repDy / repDist) * repelForce;
+                }
+            }
+          });
 
           const maxSpeed = 3 * speed;
           const currentSpeed = Math.sqrt(newSaw.vx**2 + newSaw.vy**2);
@@ -421,11 +472,6 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
               scoreGainedThisFrame += 0.01; // Base score for just surviving
           }
 
-
-          if (distance < NEAR_MISS_DISTANCE && distance > SAW_RADIUS + BALL_RADIUS) {
-              nearMissCount++;
-          }
-
           if (distance < BALL_RADIUS + SAW_RADIUS) {
               handleLoss();
               return newSaw; 
@@ -438,29 +484,29 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       } else {
         setAiScore(s => s + scoreGainedThisFrame);
       }
-
-      const sawsToRespawn = updatedSaws.filter(saw => 
-        saw.x < -SAW_RADIUS * 2 || saw.x > GAME_WIDTH + SAW_RADIUS * 2 ||
-        saw.y < -SAW_RADIUS * 2 || saw.y > GAME_HEIGHT + SAW_RADIUS * 2
-      );
       
-      let finalSaws = updatedSaws.filter(saw => !sawsToRespawn.find(s => s.id === saw.id));
-
-      if (isPlayerControlled && finalSaws.length < SAW_COUNT) {
-          const numToAdd = SAW_COUNT - finalSaws.length;
-          for (let i = 0; i < numToAdd; i++) {
-              const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['left', 'right', 'top', 'bottom'];
-              const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
-              const newSaw = await createNewSaw(difficulty, spawnEdge);
-              if (newSaw) finalSaws.push(newSaw);
-          }
-      }
-
+      let finalSaws = updatedSaws;
       if (isPlayerControlled) {
-        sawState.setSaws(finalSaws);
+          const sawsToRespawn = updatedSaws.filter(saw => 
+              saw.x < -SAW_RADIUS * 2 || saw.x > GAME_WIDTH + SAW_RADIUS * 2 ||
+              saw.y < -SAW_RADIUS * 2 || saw.y > GAME_HEIGHT + SAW_RADIUS * 2
+          );
+          
+          finalSaws = updatedSaws.filter(saw => !sawsToRespawn.find(s => s.id === saw.id));
+
+          if (finalSaws.length < SAW_COUNT) {
+              const numToAdd = SAW_COUNT - finalSaws.length;
+              for (let i = 0; i < numToAdd; i++) {
+                  const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['left', 'right', 'top', 'bottom'];
+                  const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
+                  const newSaw = await createNewSaw(difficulty, spawnEdge);
+                  if (newSaw) finalSaws.push(newSaw);
+              }
+          }
+          globalGameState.setSaws(finalSaws);
       }
       
-      if (isPlayerControlled && nearMissCount > 0 && Math.random() < 0.02) { 
+      if (isPlayerControlled && minDistanceToSaw < NEAR_MISS_DISTANCE && Math.random() < 0.02) { 
           fetchCommentary('nearMiss');
       }
       updateBallExpression(minDistanceToSaw);
@@ -513,7 +559,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     }
 
 
-    sawState.saws.forEach(saw => {
+    globalGameState.saws.forEach(saw => {
         ctx.save();
         ctx.translate(saw.x, saw.y);
         ctx.rotate(saw.angle);
@@ -537,7 +583,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     });
     
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [gameState, lives, toast, difficulty, fetchCommentary, updateBallExpression, isPlayerControlled, aiControlLogic, handleLoss, score, deathCount, createNewSaw]);
+  }, [gameState, lives, difficulty, fetchCommentary, updateBallExpression, isPlayerControlled, aiControlLogic, handleLoss, score, deathCount, createNewSaw]);
 
   useEffect(() => {
     lastTime.current = 0;
@@ -577,6 +623,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     
     resetBall();
     setGameState(GameState.Playing);
+    globalGameState.setPaused(false);
   };
   
   const buyLife = () => {
@@ -587,6 +634,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       localStorage.setItem('ropeSurvivalPurchasedLives', newPurchasedCount.toString());
       setLives(1);
       setGameState(GameState.Playing);
+      globalGameState.setPaused(false);
     } else {
       toast({ title: "Max lives purchased", description: "You cannot buy more lives this round.", variant: "destructive" });
     }
@@ -596,10 +644,12 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     toast({ title: "Ad Finished", description: "You earned a free life!" });
     setLives(1);
     setGameState(GameState.Playing);
+    globalGameState.setPaused(false);
   };
 
   const togglePause = () => {
-    setGameState(prev => prev === GameState.Playing ? GameState.Paused : GameState.Playing);
+    if (!isPlayerControlled) return;
+    globalGameState.setPaused(!globalGameState.isPaused);
   };
 
   const gameContainerHeight = isPlayerControlled ? GAME_HEIGHT + 100 : GAME_HEIGHT;
@@ -649,8 +699,8 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           </div>
       )}
       
-      {gameState === GameState.Paused && isPlayerControlled && (
-        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-30">
+      {gameState === GameState.Paused && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-30 pointer-events-auto">
             <h2 className="text-5xl font-bold text-white">Paused</h2>
         </div>
       )}
