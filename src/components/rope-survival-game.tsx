@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ShoppingCart, Settings, Heart, MessageSquareText, Send } from 'lucide-react';
+import { ShoppingCart, Settings, Heart, MessageSquareText, Send, Pause, Play } from 'lucide-react';
 import { getNewSawPattern, getAICommentary } from '@/app/actions';
 import { GameOverDialog } from './game-over-dialog';
 import { ShopDialog } from './shop-dialog';
@@ -121,7 +121,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     if (!isPlayerControlled) return;
     try {
         const patternData = await getNewSawPattern({ difficulty: difficultyLevel });
-        const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom']; // Primarily from the bottom
+        const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['top', 'bottom', 'left', 'right'];
         const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
 
         const newSaw: Saw = {
@@ -171,11 +171,12 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
   const initializeSaws = useCallback(async (count: number, difficultyLevel: number) => {
       if (!isPlayerControlled) return;
+      setSaws([]);
       const initialSaws: Saw[] = [];
       for (let i = 0; i < count; i++) {
         try {
             const patternData = await getNewSawPattern({ difficulty: difficultyLevel });
-            const edges: ('bottom')[] = ['bottom'];
+            const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['top', 'bottom', 'left', 'right'];
             const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
 
             const newSaw: Saw = {
@@ -184,7 +185,10 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
             };
 
              switch (spawnEdge) {
-                case 'bottom': newSaw.x = Math.random() * GAME_WIDTH; newSaw.y = GAME_HEIGHT - SAW_RADIUS; break;
+                case 'bottom': newSaw.x = Math.random() * GAME_WIDTH; newSaw.y = GAME_HEIGHT + SAW_RADIUS; break;
+                case 'top': newSaw.x = Math.random() * GAME_WIDTH; newSaw.y = -SAW_RADIUS; break;
+                case 'left': newSaw.x = -SAW_RADIUS; newSaw.y = Math.random() * GAME_HEIGHT; break;
+                case 'right': newSaw.x = GAME_WIDTH + SAW_RADIUS; newSaw.y = Math.random() * GAME_HEIGHT; break;
             }
 
             const targetX = GAME_WIDTH / 2;
@@ -199,7 +203,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
             console.error("Failed to initialize saw:", error);
         }
       }
-      setSaws(initialSaws);
+      sawState.setSaws(initialSaws);
   }, [isPlayerControlled]);
   
   const resetBall = () => {
@@ -232,11 +236,11 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
               }, 500);
             }
           } else {
-            // AI player logic for losing
+            // AI player logic for losing: just resets its own state and continues
             setScore(0);
             setDifficulty(1);
             resetBall();
-            setLives(INITIAL_LIVES); // Reset AI lives
+            setLives(INITIAL_LIVES); 
           }
       }
   }
@@ -287,7 +291,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
             fetchCommentary('levelUp');
             
             const newPattern = await getNewSawPattern({ difficulty: currentDifficulty });
-            setSaws(prevSaws => prevSaws.map(saw => ({
+            sawState.setSaws(sawState.saws.map(saw => ({
                 ...saw,
                 speedMultiplier: newPattern.speedMultiplier,
                 pattern: newPattern.pattern,
@@ -296,7 +300,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
         
         const desiredSawCount = Math.min(MAX_SAWS, MIN_SAWS + Math.floor(currentDifficulty / 2));
 
-        if (saws.length < desiredSawCount) {
+        if (sawState.saws.length < desiredSawCount) {
             await addNewSaw(currentDifficulty);
         }
     };
@@ -304,7 +308,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     const interval = setInterval(manageGame, 2000); 
 
     return () => clearInterval(interval);
-  }, [gameState, difficulty, score, fetchCommentary, addNewSaw, isPlayerControlled, deathCount, saws.length]);
+  }, [gameState, difficulty, score, fetchCommentary, addNewSaw, isPlayerControlled, deathCount]);
 
   const updateBallExpression = useCallback((distance: number) => {
     clearTimeout(expressionTimeout.current);
@@ -359,101 +363,101 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     lastTime.current = timestamp;
 
     const ctx = canvasRef.current.getContext('2d');
-    if (!ctx || gameState !== GameState.Playing) {
+    if (!ctx || gameState === GameState.GameOver) {
         animationFrameId.current = requestAnimationFrame(gameLoop);
       return;
     }
-
-    if (!isPlayerControlled) {
-      aiControlLogic();
-    }
     
-    if (isPlayerControlled) {
-        setScore(prev => prev + 1);
+    if (gameState === GameState.Playing) {
+      if (!isPlayerControlled) {
+        aiControlLogic();
+      }
+      
+      setScore(prev => prev + 1);
+      
+      const { x, y, px, py } = ball.current;
+      let vx = (x - px) * DAMPING;
+      let vy = (y - py) * DAMPING;
+      ball.current.px = x;
+      ball.current.py = y;
+      ball.current.x += vx;
+      ball.current.y += vy;
+      ball.current.y += GRAVITY;
+
+      const dx = ball.current.x - ropeAnchor.current.x;
+      const dy = ball.current.y - ropeAnchor.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const diff = ropeLength.current - dist;
+      const percent = diff / dist / 2;
+      const offsetX = dx * percent;
+      const offsetY = dy * percent;
+
+      ball.current.x += offsetX;
+      ball.current.y += offsetY;
+      
+      let minDistanceToSaw = Infinity;
+      let nearMissCount = 0;
+
+      const updatedSaws = sawState.saws.map(saw => {
+          let newSaw = { ...saw };
+          newSaw.angle += 0.25;
+          newSaw.time += deltaTime;
+          const speed = newSaw.speedMultiplier * (isPlayerControlled && deathCount >= 5 ? 0.7 : 1);
+          
+          const targetX = ball.current.x + Math.sin(newSaw.time) * 100;
+          const targetY = ball.current.y + Math.cos(newSaw.time) * 50;
+          
+          const homingFactor = 0.005 * speed;
+          newSaw.vx += (targetX - newSaw.x) * homingFactor * 0.1;
+          newSaw.vy += (targetY - newSaw.y) * homingFactor * 0.1;
+
+          const maxSpeed = 3 * speed;
+          const currentSpeed = Math.sqrt(newSaw.vx**2 + newSaw.vy**2);
+          if (currentSpeed > maxSpeed) {
+              newSaw.vx = (newSaw.vx / currentSpeed) * maxSpeed;
+              newSaw.vy = (newSaw.vy / currentSpeed) * maxSpeed;
+          }
+          
+          newSaw.x += newSaw.vx;
+          newSaw.y += newSaw.vy;
+
+          if (newSaw.pattern.includes('reversal') && Math.random() < 0.015) {
+            if (Math.random() > 0.5) newSaw.vx *= -1.2;
+            else newSaw.vy *= -1.2;
+          }
+
+          if ((newSaw.x - SAW_RADIUS < 0 && newSaw.vx < 0) || (newSaw.x + SAW_RADIUS > GAME_WIDTH && newSaw.vx > 0)) {
+              newSaw.vx *= -1;
+          }
+          if ((newSaw.y - SAW_RADIUS < 0 && newSaw.vy < 0) || (newSaw.y + SAW_RADIUS > GAME_HEIGHT && newSaw.vy > 0)) {
+              newSaw.vy *= -1;
+          }
+
+          const ballSawDx = ball.current.x - newSaw.x;
+          const ballSawDy = ball.current.y - newSaw.y;
+          const distance = Math.sqrt(ballSawDx * ballSawDx + ballSawDy * ballSawDy);
+          minDistanceToSaw = Math.min(minDistanceToSaw, distance);
+          
+          if (distance < NEAR_MISS_DISTANCE && distance > SAW_RADIUS + BALL_RADIUS) {
+              nearMissCount++;
+          }
+
+          if (distance < BALL_RADIUS + SAW_RADIUS) {
+              handleLoss();
+              return newSaw; 
+          }
+          return newSaw;
+      });
+
+      if (isPlayerControlled) {
+        sawState.setSaws(updatedSaws);
+      }
+
+      if (isPlayerControlled && nearMissCount > 0 && Math.random() < 0.02) { 
+          fetchCommentary('nearMiss');
+      }
+      updateBallExpression(minDistanceToSaw);
     }
-    
-    const { x, y, px, py } = ball.current;
-    let vx = (x - px) * DAMPING;
-    let vy = (y - py) * DAMPING;
-    ball.current.px = x;
-    ball.current.py = y;
-    ball.current.x += vx;
-    ball.current.y += vy;
-    ball.current.y += GRAVITY;
-
-    const dx = ball.current.x - ropeAnchor.current.x;
-    const dy = ball.current.y - ropeAnchor.current.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const diff = ropeLength.current - dist;
-    const percent = diff / dist / 2;
-    const offsetX = dx * percent;
-    const offsetY = dy * percent;
-
-    ball.current.x += offsetX;
-    ball.current.y += offsetY;
-    
-    let minDistanceToSaw = Infinity;
-    let nearMissCount = 0;
-
-    const updatedSaws = sawState.saws.map(saw => {
-        let newSaw = { ...saw };
-        newSaw.angle += 0.25;
-        newSaw.time += deltaTime;
-        const speed = newSaw.speedMultiplier * (deathCount >= 5 ? 0.7 : 1);
-        
-        const targetX = ball.current.x + Math.sin(newSaw.time) * 100; // Target area around the ball
-        const targetY = ball.current.y + Math.cos(newSaw.time) * 50;
-        
-        const homingFactor = 0.005 * speed; // Reduced homing factor
-        newSaw.vx += (targetX - newSaw.x) * homingFactor * 0.1;
-        newSaw.vy += (targetY - newSaw.y) * homingFactor * 0.1;
-
-        const maxSpeed = 3 * speed;
-        const currentSpeed = Math.sqrt(newSaw.vx**2 + newSaw.vy**2);
-        if (currentSpeed > maxSpeed) {
-            newSaw.vx = (newSaw.vx / currentSpeed) * maxSpeed;
-            newSaw.vy = (newSaw.vy / currentSpeed) * maxSpeed;
-        }
-        
-        newSaw.x += newSaw.vx;
-        newSaw.y += newSaw.vy;
-
-        if (newSaw.pattern.includes('reversal') && Math.random() < 0.015) {
-           if (Math.random() > 0.5) newSaw.vx *= -1.2;
-           else newSaw.vy *= -1.2;
-        }
-
-        if ((newSaw.x - SAW_RADIUS < 0 && newSaw.vx < 0) || (newSaw.x + SAW_RADIUS > GAME_WIDTH && newSaw.vx > 0)) {
-            newSaw.vx *= -1;
-        }
-        if ((newSaw.y - SAW_RADIUS < 0 && newSaw.vy < 0) || (newSaw.y + SAW_RADIUS > GAME_HEIGHT && newSaw.vy > 0)) {
-            newSaw.vy *= -1;
-        }
-
-        const ballSawDx = ball.current.x - newSaw.x;
-        const ballSawDy = ball.current.y - newSaw.y;
-        const distance = Math.sqrt(ballSawDx * ballSawDx + ballSawDy * ballSawDy);
-        minDistanceToSaw = Math.min(minDistanceToSaw, distance);
-        
-        if (distance < NEAR_MISS_DISTANCE && distance > SAW_RADIUS + BALL_RADIUS) {
-            nearMissCount++;
-        }
-
-        if (distance < BALL_RADIUS + SAW_RADIUS) {
-            handleLoss();
-            return newSaw; 
-        }
-        return newSaw;
-    });
-
-    if (isPlayerControlled) {
-      sawState.setSaws(updatedSaws);
-    }
-
-    if (isPlayerControlled && nearMissCount > 0 && Math.random() < 0.02) { 
-        fetchCommentary('nearMiss');
-    }
-    updateBallExpression(minDistanceToSaw);
 
 
     ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -529,16 +533,14 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   }, [gameState, lives, toast, difficulty, fetchCommentary, updateBallExpression, isPlayerControlled, aiControlLogic, handleLoss, score, deathCount]);
 
   useEffect(() => {
-    if (gameState === GameState.Playing) {
-      lastTime.current = 0;
-      animationFrameId.current = requestAnimationFrame(gameLoop);
-    }
+    lastTime.current = 0;
+    animationFrameId.current = requestAnimationFrame(gameLoop);
     return () => {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
     };
-  }, [gameState, gameLoop]);
+  }, [gameLoop]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (gameState !== GameState.Playing || !canvasRef.current || !isPlayerControlled) return;
@@ -558,9 +560,9 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     setDeathCount(0);
     setDifficulty(1);
     setCommentary('');
-    initializeSaws(MIN_SAWS, 1);
-    fetchCommentary('gameStart');
     if (isPlayerControlled) {
+      initializeSaws(MIN_SAWS, 1);
+      fetchCommentary('gameStart');
       const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
       setPurchasedLives(savedPurchasedLives);
     }
@@ -588,6 +590,10 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     setGameState(GameState.Playing);
   };
 
+  const togglePause = () => {
+    setGameState(prev => prev === GameState.Playing ? GameState.Paused : GameState.Playing);
+  };
+
   const gameContainerHeight = isPlayerControlled ? GAME_HEIGHT + 100 : GAME_HEIGHT;
 
   return (
@@ -607,31 +613,38 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
         }
       `}</style>
       
-      {isPlayerControlled && (
-        <>
-            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 pointer-events-none">
-                <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">SCORE: {Math.floor(score/10)}</h1>
-                <div className="flex items-center gap-4 pointer-events-auto">
-                <div className="flex items-center gap-2 text-2xl font-bold text-red-500 bg-black/30 px-3 py-1 rounded-lg">
-                    <Heart className="text-destructive fill-destructive" />
-                    <span>{lives}</span>
-                </div>
-                <Button variant="ghost" size="icon" onClick={() => setShopOpen(true)}>
-                    <ShoppingCart className="w-6 h-6" />
-                </Button>
-                <Button variant="ghost" size="icon">
-                    <Settings className="w-6 h-6" />
-                </Button>
-                </div>
+      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 pointer-events-none">
+          <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">SCORE: {Math.floor(score/10)}</h1>
+          {isPlayerControlled && (
+            <div className="flex items-center gap-4 pointer-events-auto">
+            <div className="flex items-center gap-2 text-2xl font-bold text-red-500 bg-black/30 px-3 py-1 rounded-lg">
+                <Heart className="text-destructive fill-destructive" />
+                <span>{lives}</span>
             </div>
+            <Button variant="ghost" size="icon" onClick={togglePause}>
+              {gameState === GameState.Playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setShopOpen(true)}>
+                <ShoppingCart className="w-6 h-6" />
+            </Button>
+            <Button variant="ghost" size="icon">
+                <Settings className="w-6 h-6" />
+            </Button>
+            </div>
+          )}
+      </div>
 
-            {commentary && (
-                <div key={commentary} className="commentary absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 text-white p-2 rounded-lg flex items-center gap-2 z-20 text-center max-w-[90%]">
-                    <MessageSquareText className="w-5 h-5 text-primary flex-shrink-0" />
-                    <p className="font-bold">{commentary}</p>
-                </div>
-            )}
-        </>
+      {isPlayerControlled && commentary && (
+          <div key={commentary} className="commentary absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 text-white p-2 rounded-lg flex items-center gap-2 z-20 text-center max-w-[90%]">
+              <MessageSquareText className="w-5 h-5 text-primary flex-shrink-0" />
+              <p className="font-bold">{commentary}</p>
+          </div>
+      )}
+      
+      {gameState === GameState.Paused && isPlayerControlled && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-30">
+            <h2 className="text-5xl font-bold text-white">Paused</h2>
+        </div>
       )}
 
       <canvas
