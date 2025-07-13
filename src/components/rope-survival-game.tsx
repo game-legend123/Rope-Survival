@@ -669,24 +669,29 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       `}</style>
       
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 pointer-events-none">
-          <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">SCORE: {isPlayerControlled ? Math.floor(score) : Math.floor(aiScore)}</h1>
-          {isPlayerControlled && (
-            <div className="flex items-center gap-4 pointer-events-auto">
-            <div className="flex items-center gap-2 text-2xl font-bold text-red-500 bg-black/30 px-3 py-1 rounded-lg">
-                <Heart className="text-destructive fill-destructive" />
-                <span>{lives}</span>
-            </div>
-            <Button variant="ghost" size="icon" onClick={togglePause}>
-              {gameState === GameState.Playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => setShopOpen(true)}>
-                <ShoppingCart className="w-6 h-6" />
-            </Button>
-            <Button variant="ghost" size="icon">
-                <Settings className="w-6 h-6" />
-            </Button>
-            </div>
-          )}
+        {isPlayerControlled ? (
+          <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">SCORE: {Math.floor(score)}</h1>
+        ) : (
+          <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">AI SCORE: {Math.floor(aiScore)}</h1>
+        )}
+        
+        {isPlayerControlled && (
+          <div className="flex items-center gap-4 pointer-events-auto">
+          <div className="flex items-center gap-2 text-2xl font-bold text-red-500 bg-black/30 px-3 py-1 rounded-lg">
+              <Heart className="text-destructive fill-destructive" />
+              <span>{lives}</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={togglePause}>
+            {gameState === GameState.Playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setShopOpen(true)}>
+              <ShoppingCart className="w-6 h-6" />
+          </Button>
+          <Button variant="ghost" size="icon">
+              <Settings className="w-6 h-6" />
+          </Button>
+          </div>
+        )}
       </div>
 
       {isPlayerControlled && commentary && (
@@ -696,28 +701,27 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           </div>
       )}
       
-      {gameState === GameState.Paused && (
-        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-30 pointer-events-auto">
-            <h2 className="text-5xl font-bold text-white">Paused</h2>
-        </div>
-      )}
+      <div className="relative w-full h-full">
+        <canvas
+          ref={canvasRef}
+          width={GAME_WIDTH}
+          height={GAME_HEIGHT}
+          className="bg-background rounded-lg shadow-2xl border-2 border-border"
+          style={{
+            cursor: isPlayerControlled ? 'pointer' : 'default',
+          }}
+          onMouseMove={handleMouseMove}
+        />
+        {gameState === GameState.Paused && (
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-30 pointer-events-auto rounded-lg">
+              <h2 className="text-5xl font-bold text-white">Paused</h2>
+          </div>
+        )}
+      </div>
 
-      <canvas
-        ref={canvasRef}
-        width={GAME_WIDTH}
-        height={GAME_HEIGHT}
-        className="bg-background rounded-lg shadow-2xl border-2 border-border"
-        style={{
-          cursor: isPlayerControlled ? 'pointer' : 'default',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-        }}
-        onMouseMove={handleMouseMove}
-      />
 
       {isPlayerControlled && (
-        <div className="absolute bottom-0 left-0 w-full p-4 bg-background/80 backdrop-blur-sm rounded-b-lg">
+        <div className="absolute bottom-0 left-0 w-full p-4 bg-background/80 backdrop-blur-sm rounded-b-lg z-40">
             <form onSubmit={handlePlayerReply} className="flex items-center gap-2">
                 <Input 
                     type="text"
@@ -759,3 +763,5 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 };
 
 export default RopeSurvivalGame;
+
+    
