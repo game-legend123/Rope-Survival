@@ -76,12 +76,23 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   const [ballExpression, setBallExpression] = useState<BallExpression>('normal');
   const expressionTimeout = useRef<NodeJS.Timeout>();
 
-  const [saws, setSaws] = useState<Saw[]>(sawState.saws);
+  const [saws, setSaws] = useState<Saw[]>([]);
   
   useEffect(() => {
-    const unsubscribe = sawState.subscribe(setSaws);
+    // Only the player-controlled component should manage saw state
+    if (isPlayerControlled) {
+      sawState.setSaws(saws);
+    }
+  }, [saws, isPlayerControlled]);
+
+  useEffect(() => {
+    const unsubscribe = sawState.subscribe((newSaws) => {
+      // All components listen for saw updates
+      setSaws(newSaws);
+    });
     return unsubscribe;
   }, []);
+
 
   const [currentSkinId, setCurrentSkinId] = useState('default');
   const ropeColor = useRef('#FFFFFF');
@@ -110,7 +121,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     if (!isPlayerControlled) return;
     try {
         const patternData = await getNewSawPattern({ difficulty: difficultyLevel });
-        const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom', 'left', 'right', 'top'];
+        const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom']; // Primarily from the bottom
         const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
 
         const newSaw: Saw = {
@@ -152,7 +163,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
         newSaw.vx = (dx / dist) * 2 * patternData.speedMultiplier;
         newSaw.vy = (dy / dist) * 2 * patternData.speedMultiplier;
         
-        sawState.setSaws([...sawState.saws, newSaw]);
+        setSaws(prevSaws => [...prevSaws, newSaw]);
     } catch (error) {
         console.error("Failed to initialize saw:", error);
     }
@@ -164,7 +175,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       for (let i = 0; i < count; i++) {
         try {
             const patternData = await getNewSawPattern({ difficulty: difficultyLevel });
-            const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom', 'left', 'right', 'top'];
+            const edges: ('bottom')[] = ['bottom'];
             const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
 
             const newSaw: Saw = {
@@ -174,9 +185,6 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
              switch (spawnEdge) {
                 case 'bottom': newSaw.x = Math.random() * GAME_WIDTH; newSaw.y = GAME_HEIGHT - SAW_RADIUS; break;
-                case 'top': newSaw.x = Math.random() * GAME_WIDTH; newSaw.y = SAW_RADIUS; break;
-                case 'left': newSaw.x = SAW_RADIUS; newSaw.y = Math.random() * GAME_HEIGHT; break;
-                case 'right': newSaw.x = GAME_WIDTH - SAW_RADIUS; newSaw.y = Math.random() * GAME_HEIGHT; break;
             }
 
             const targetX = GAME_WIDTH / 2;
@@ -191,7 +199,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
             console.error("Failed to initialize saw:", error);
         }
       }
-      sawState.setSaws(initialSaws);
+      setSaws(initialSaws);
   }, [isPlayerControlled]);
   
   const resetBall = () => {
@@ -204,31 +212,33 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   }
 
   const handleLoss = () => {
-    if (isPlayerControlled) {
-      const newDeathCount = deathCount + 1;
-      setDeathCount(newDeathCount);
-
       if (lives - 1 > 0) {
-          fetchCommentary('lostLife');
+          if (isPlayerControlled) fetchCommentary('lostLife');
           setLives(l => l - 1);
           resetBall();
+          if (isPlayerControlled) {
+            const newDeathCount = deathCount + 1;
+            setDeathCount(newDeathCount);
+          }
       } else {
-          fetchCommentary('gameOver');
-          setLives(0);
-          setGameState(GameState.GameOver);
-          if (canvasRef.current) {
-            canvasRef.current.style.animation = 'shake 0.5s';
-            setTimeout(() => {
-                if (canvasRef.current) canvasRef.current.style.animation = '';
-            }, 500);
+          if (isPlayerControlled) {
+            fetchCommentary('gameOver');
+            setLives(0);
+            setGameState(GameState.GameOver);
+            if (canvasRef.current) {
+              canvasRef.current.style.animation = 'shake 0.5s';
+              setTimeout(() => {
+                  if (canvasRef.current) canvasRef.current.style.animation = '';
+              }, 500);
+            }
+          } else {
+            // AI player logic for losing
+            setScore(0);
+            setDifficulty(1);
+            resetBall();
+            setLives(INITIAL_LIVES); // Reset AI lives
           }
       }
-    } else {
-      // AI player logic
-      setScore(0);
-      setDifficulty(1);
-      resetBall();
-    }
   }
 
 
@@ -241,8 +251,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
       setPurchasedLives(savedPurchasedLives);
       fetchCommentary('gameStart');
-      const currentDifficulty = deathCount >= 5 ? 1 : difficulty;
-      initializeSaws(MIN_SAWS, currentDifficulty);
+      initializeSaws(MIN_SAWS, 1);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlayerControlled]);
@@ -278,7 +287,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
             fetchCommentary('levelUp');
             
             const newPattern = await getNewSawPattern({ difficulty: currentDifficulty });
-            sawState.setSaws(sawState.saws.map(saw => ({
+            setSaws(prevSaws => prevSaws.map(saw => ({
                 ...saw,
                 speedMultiplier: newPattern.speedMultiplier,
                 pattern: newPattern.pattern,
@@ -287,15 +296,15 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
         
         const desiredSawCount = Math.min(MAX_SAWS, MIN_SAWS + Math.floor(currentDifficulty / 2));
 
-        if (sawState.saws.length < desiredSawCount) {
+        if (saws.length < desiredSawCount) {
             await addNewSaw(currentDifficulty);
         }
     };
     
-    const interval = setInterval(manageGame, 1000); 
+    const interval = setInterval(manageGame, 2000); 
 
     return () => clearInterval(interval);
-  }, [gameState, difficulty, score, fetchCommentary, addNewSaw, isPlayerControlled, deathCount]);
+  }, [gameState, difficulty, score, fetchCommentary, addNewSaw, isPlayerControlled, deathCount, saws.length]);
 
   const updateBallExpression = useCallback((distance: number) => {
     clearTimeout(expressionTimeout.current);
@@ -308,12 +317,12 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
   }, [ballExpression]);
 
   const aiControlLogic = useCallback(() => {
-    if (saws.length === 0) return;
+    if (sawState.saws.length === 0) return;
 
-    let closestSaw = saws[0];
+    let closestSaw = sawState.saws[0];
     let minDistance = Infinity;
 
-    saws.forEach(saw => {
+    sawState.saws.forEach(saw => {
       const dist = Math.sqrt((ball.current.x - saw.x)**2 + (ball.current.y - saw.y)**2);
       if (dist < minDistance) {
         minDistance = dist;
@@ -341,7 +350,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     ball.current.x += forceX;
     ropeLength.current = targetY;
 
-  }, [saws]);
+  }, []);
 
   const gameLoop = useCallback((timestamp: number) => {
     if (!canvasRef.current) return;
@@ -351,9 +360,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx || gameState !== GameState.Playing) {
-      if (gameState !== GameState.GameOver || !isPlayerControlled) {
-         animationFrameId.current = requestAnimationFrame(gameLoop);
-      }
+        animationFrameId.current = requestAnimationFrame(gameLoop);
       return;
     }
 
@@ -388,20 +395,20 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     let minDistanceToSaw = Infinity;
     let nearMissCount = 0;
 
-    const updatedSaws = saws.map(saw => {
+    const updatedSaws = sawState.saws.map(saw => {
         let newSaw = { ...saw };
         newSaw.angle += 0.25;
         newSaw.time += deltaTime;
-        const speed = newSaw.speedMultiplier;
+        const speed = newSaw.speedMultiplier * (deathCount >= 5 ? 0.7 : 1);
         
-        const targetX = ball.current.x;
-        const targetY = ball.current.y;
+        const targetX = ball.current.x + Math.sin(newSaw.time) * 100; // Target area around the ball
+        const targetY = ball.current.y + Math.cos(newSaw.time) * 50;
         
-        const homingFactor = 0.015 * speed;
+        const homingFactor = 0.005 * speed; // Reduced homing factor
         newSaw.vx += (targetX - newSaw.x) * homingFactor * 0.1;
         newSaw.vy += (targetY - newSaw.y) * homingFactor * 0.1;
 
-        const maxSpeed = 5 * speed;
+        const maxSpeed = 3 * speed;
         const currentSpeed = Math.sqrt(newSaw.vx**2 + newSaw.vy**2);
         if (currentSpeed > maxSpeed) {
             newSaw.vx = (newSaw.vx / currentSpeed) * maxSpeed;
@@ -416,20 +423,10 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
            else newSaw.vy *= -1.2;
         }
 
-        if (newSaw.x - SAW_RADIUS < 0 && newSaw.vx < 0) {
-            newSaw.x = SAW_RADIUS;
+        if ((newSaw.x - SAW_RADIUS < 0 && newSaw.vx < 0) || (newSaw.x + SAW_RADIUS > GAME_WIDTH && newSaw.vx > 0)) {
             newSaw.vx *= -1;
         }
-        if (newSaw.x + SAW_RADIUS > GAME_WIDTH && newSaw.vx > 0) {
-            newSaw.x = GAME_WIDTH - SAW_RADIUS;
-            newSaw.vx *= -1;
-        }
-        if (newSaw.y - SAW_RADIUS < 0 && newSaw.vy < 0) {
-            newSaw.y = SAW_RADIUS;
-            newSaw.vy *= -1;
-        }
-        if (newSaw.y + SAW_RADIUS > GAME_HEIGHT && newSaw.vy > 0) {
-            newSaw.y = GAME_HEIGHT - SAW_RADIUS;
+        if ((newSaw.y - SAW_RADIUS < 0 && newSaw.vy < 0) || (newSaw.y + SAW_RADIUS > GAME_HEIGHT && newSaw.vy > 0)) {
             newSaw.vy *= -1;
         }
 
@@ -444,7 +441,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
 
         if (distance < BALL_RADIUS + SAW_RADIUS) {
             handleLoss();
-            return newSaw; // Don't remove on collision, just handle loss
+            return newSaw; 
         }
         return newSaw;
     });
@@ -453,7 +450,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       sawState.setSaws(updatedSaws);
     }
 
-    if (nearMissCount > 0 && Math.random() < 0.02) { 
+    if (isPlayerControlled && nearMissCount > 0 && Math.random() < 0.02) { 
         fetchCommentary('nearMiss');
     }
     updateBallExpression(minDistanceToSaw);
@@ -505,7 +502,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     }
 
 
-    saws.forEach(saw => {
+    sawState.saws.forEach(saw => {
         ctx.save();
         ctx.translate(saw.x, saw.y);
         ctx.rotate(saw.angle);
@@ -529,7 +526,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     });
     
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [gameState, lives, toast, difficulty, fetchCommentary, saws, updateBallExpression, isPlayerControlled, aiControlLogic, handleLoss, score]);
+  }, [gameState, lives, toast, difficulty, fetchCommentary, updateBallExpression, isPlayerControlled, aiControlLogic, handleLoss, score, deathCount]);
 
   useEffect(() => {
     if (gameState === GameState.Playing) {
@@ -550,17 +547,18 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     const mouseY = e.clientY - rect.top;
     
     ropeLength.current = Math.max(50, Math.min(GAME_HEIGHT - 20, mouseY));
-    const forceX = (mouseX - ropeAnchor.current.x) * 0.002;
-    ball.current.x += forceX;
+    const forceX = (mouseX - ball.current.x) * 0.1; // More responsive horizontal movement
+    const targetX = ball.current.x + forceX;
+    ball.current.x = Math.max(BALL_RADIUS, Math.min(GAME_WIDTH - BALL_RADIUS, targetX));
   };
 
   const restartGame = () => {
     setScore(0);
     setLives(INITIAL_LIVES);
-    const newDifficulty = deathCount >= 5 ? 1 : difficulty;
-    setDifficulty(newDifficulty);
+    setDeathCount(0);
+    setDifficulty(1);
     setCommentary('');
-    initializeSaws(MIN_SAWS, newDifficulty);
+    initializeSaws(MIN_SAWS, 1);
     fetchCommentary('gameStart');
     if (isPlayerControlled) {
       const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
