@@ -38,6 +38,7 @@ export const GenerateCommentaryInputSchema = z.object({
   event: z
     .enum(['lostLife', 'levelUp', 'gameStart', 'gameOver', 'nearMiss'])
     .describe('The specific game event that occurred.'),
+  playerMessage: z.string().optional().describe('An optional message from the player talking to the AI.'),
 });
 export type GenerateCommentaryInput = z.infer<
   typeof GenerateCommentaryInputSchema
