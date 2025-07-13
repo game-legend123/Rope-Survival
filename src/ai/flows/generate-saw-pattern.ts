@@ -31,19 +31,12 @@ const prompt = ai.definePrompt({
   Based on the difficulty level, generate a new saw blade movement pattern and a corresponding speed multiplier. The pattern should become more complex, unpredictable, and downright unfair as the difficulty increases linearly. Respond using JSON format.
 
   Here are some examples of frustrating patterns, you can create your own variations.
-  - Difficulty 1: steady horizontal movement, speed multiplier 1.5
-  - Difficulty 2: sudden direction changes, speed multiplier 1.8
-  - Difficulty 3: accelerates and decelerates randomly, speed multiplier 2.2
-  - Difficulty 4: fast zig-zag movement, speed multiplier 2.8
-  - Difficulty 5: sinusoidal wave with changing amplitude, speed multiplier 3.5
-  - Difficulty 6: homes in on the player slightly, speed multiplier 4.0
-  - Difficulty 7: complex wave with sudden speed boosts, speed multiplier 4.5
-  - Difficulty 8: erratic movement with short teleports, speed multiplier 5.0
-  - Difficulty 9: combination of homing and teleporting, speed multiplier 5.5
-  - Difficulty 10: extremely erratic, fast, and homing movement, speed multiplier 6.0
-  - Difficulty 11 and above: 'relentless homing with random reversal'. The saw moves very fast horizontally, constantly adjusting its position to home in on the player's ball. At random intervals, it will abruptly reverse its horizontal direction, making it extremely unpredictable. The speed multiplier should be very high, starting at 6.5 and increasing with difficulty.
+  - Difficulty 1-2: 'steady' - simple back and forth movement. speed multiplier 1.5
+  - Difficulty 3-4: 'accelerated' - movement with random speed changes. speed multiplier 2.2
+  - Difficulty 5-7: 'homing' - slightly homes in on the player. speed multiplier 3.5
+  - Difficulty 8 and above: 'relentless homing with random reversal'. The saw moves very fast, constantly adjusting its position to home in on the player's ball. At random intervals, it will abruptly reverse its direction, making it extremely unpredictable. The speed multiplier should be very high, starting at 4.5 and increasing with difficulty.
 
-  Generate a pattern for difficulty {{{difficulty}}}. If the difficulty is 11 or higher, you MUST use the 'relentless homing with random reversal' pattern.
+  Generate a pattern for difficulty {{{difficulty}}}. If the difficulty is 8 or higher, you MUST use the 'relentless homing with random reversal' pattern.
 
   Output in JSON format:
   {
@@ -63,3 +56,5 @@ const generateSawPatternFlow = ai.defineFlow(
     return output!;
   }
 );
+
+    

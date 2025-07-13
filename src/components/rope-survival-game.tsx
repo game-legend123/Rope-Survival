@@ -6,7 +6,7 @@ import { getNewSawPattern, getAICommentary } from '@/app/actions';
 import { GameOverDialog } from './game-over-dialog';
 import { ShopDialog } from './shop-dialog';
 import { useToast } from "@/hooks/use-toast";
-import { type SawPattern } from '@/lib/types';
+import { type Saw, type SawPattern } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 
 const GAME_WIDTH = 800;
@@ -18,21 +18,21 @@ const BALL_RADIUS = 15;
 const INITIAL_LIVES = 3;
 const MAX_PURCHASED_LIVES = 3;
 
-// Game states
 const GameState = {
   Playing: 'playing',
   GameOver: 'gameOver',
   Paused: 'paused',
 };
 
-// Main component
+type BallExpression = 'normal' | 'scared' | 'relieved';
+const NEAR_MISS_DISTANCE = SAW_RADIUS * 2.5;
+
 const RopeSurvivalGame = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   const lastTime = useRef<number>(0);
   const { toast } = useToast();
 
-  // Game state
   const [gameState, setGameState] = useState(GameState.Playing);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(INITIAL_LIVES);
@@ -40,10 +40,8 @@ const RopeSurvivalGame = () => {
   const [difficulty, setDifficulty] = useState(1);
   const [commentary, setCommentary] = useState('');
   
-  // Modals
   const [isShopOpen, setShopOpen] = useState(false);
 
-  // Rope and Ball state
   const ropeAnchor = useRef({ x: GAME_WIDTH / 2, y: 0 });
   const ropeLength = useRef(200);
   const ball = useRef({
@@ -52,19 +50,11 @@ const RopeSurvivalGame = () => {
     px: GAME_WIDTH / 2,
     py: ropeLength.current - 1,
   });
+  const [ballExpression, setBallExpression] = useState<BallExpression>('normal');
+  const expressionTimeout = useRef<NodeJS.Timeout>();
 
-  // Saw state
-  const saw = useRef<SawPattern & { x: number, y: number, angle: number, vx: number, time: number }>({
-    x: 0,
-    y: GAME_HEIGHT - SAW_RADIUS,
-    angle: 0,
-    vx: 2,
-    pattern: 'steady horizontal',
-    speedMultiplier: 1.5,
-    time: 0,
-  });
-  
-  // Customization
+  const [saws, setSaws] = useState<Saw[]>([]);
+
   const [currentSkinId, setCurrentSkinId] = useState('default');
   const ropeColor = useRef('#FFFFFF');
 
@@ -76,12 +66,10 @@ const RopeSurvivalGame = () => {
           setCommentary(result.commentary);
         }
       } catch (e) {
-        // silently fail
         console.error(e);
       }
   }, [score, difficulty]);
   
-  // Load state from localStorage
   useEffect(() => {
     const savedSkin = localStorage.getItem('ropeSurvivalSkin');
     if (savedSkin) {
@@ -109,24 +97,87 @@ const RopeSurvivalGame = () => {
     }
   }
 
-  // AI Difficulty Progression
+  const addNewSaw = useCallback(async (patternData: SawPattern) => {
+    const edges: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom', 'left', 'right', 'top'];
+    const spawnEdge = edges[Math.floor(Math.random() * edges.length)];
+
+    const newSaw: Saw = {
+      id: Date.now() + Math.random(),
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      angle: 0,
+      time: 0,
+      spawnEdge,
+      ...patternData,
+    };
+
+    switch (spawnEdge) {
+        case 'bottom':
+            newSaw.x = Math.random() * GAME_WIDTH;
+            newSaw.y = GAME_HEIGHT + SAW_RADIUS;
+            newSaw.vx = Math.random() > 0.5 ? 2 : -2;
+            break;
+        case 'top':
+            newSaw.x = Math.random() * GAME_WIDTH;
+            newSaw.y = -SAW_RADIUS;
+            newSaw.vx = Math.random() > 0.5 ? 2 : -2;
+            break;
+        case 'left':
+            newSaw.x = -SAW_RADIUS;
+            newSaw.y = Math.random() * GAME_HEIGHT;
+            newSaw.vy = Math.random() > 0.5 ? 2 : -2;
+            break;
+        case 'right':
+            newSaw.x = GAME_WIDTH + SAW_RADIUS;
+            newSaw.y = Math.random() * GAME_HEIGHT;
+            newSaw.vy = Math.random() > 0.5 ? 2 : -2;
+            break;
+    }
+
+    setSaws(prevSaws => [...prevSaws, newSaw]);
+  }, []);
+
   useEffect(() => {
     if (gameState !== GameState.Playing) return;
+
+    const manageSaws = async () => {
+        const newDifficulty = Math.floor(score / 1000) + 1;
+        if(newDifficulty > difficulty) {
+            setDifficulty(newDifficulty);
+            fetchCommentary('levelUp');
+        }
+
+        const maxSaws = Math.min(2 + Math.floor(difficulty / 2), 5);
+
+        if (saws.length < maxSaws) {
+            try {
+                const newPattern = await getNewSawPattern({ difficulty });
+                addNewSaw(newPattern);
+            } catch (error) {
+                console.error("Failed to add new saw:", error);
+                // Add a default saw on error
+                addNewSaw({ pattern: 'steady', speedMultiplier: 1 + difficulty * 0.5});
+            }
+        }
+    };
     
-    const interval = setInterval(async () => {
-      const newDifficulty = difficulty + 1;
-      setDifficulty(newDifficulty);
-      fetchCommentary('levelUp');
-      const newPattern = await getNewSawPattern({ difficulty: newDifficulty });
-      saw.current.pattern = newPattern.pattern;
-      saw.current.speedMultiplier = newPattern.speedMultiplier;
-      saw.current.time = 0; // Reset time for patterns that use it
-    }, 10000); // Increased difficulty frequency
+    const interval = setInterval(manageSaws, 3000); 
 
     return () => clearInterval(interval);
-  }, [gameState, difficulty, toast, fetchCommentary]);
+  }, [gameState, difficulty, score, saws.length, addNewSaw, fetchCommentary]);
 
-  // Game Loop
+  const updateBallExpression = useCallback((distance: number) => {
+    clearTimeout(expressionTimeout.current);
+    if (distance < NEAR_MISS_DISTANCE) {
+        setBallExpression('scared');
+    } else if (ballExpression === 'scared') {
+        setBallExpression('relieved');
+        expressionTimeout.current = setTimeout(() => setBallExpression('normal'), 500);
+    }
+  }, [ballExpression]);
+
   const gameLoop = useCallback((timestamp: number) => {
     if (!canvasRef.current) return;
     if (!lastTime.current) lastTime.current = timestamp;
@@ -143,7 +194,6 @@ const RopeSurvivalGame = () => {
     
     setScore(prev => prev + 1);
     
-    // --- UPDATE PHYSICS ---
     const { x, y, px, py } = ball.current;
     let vx = (x - px) * DAMPING;
     let vy = (y - py) * DAMPING;
@@ -163,88 +213,84 @@ const RopeSurvivalGame = () => {
 
     ball.current.x += offsetX;
     ball.current.y += offsetY;
-
-    saw.current.angle += 0.25; // Faster spin
-    saw.current.time += deltaTime;
-    const speed = saw.current.speedMultiplier * 2.5; // Increased base speed
     
-    // More complex saw patterns
-    const targetX = ball.current.x;
-    switch(saw.current.pattern) {
-      case 'relentless homing with random reversal':
-        // Move towards the player
-        saw.current.x += (targetX - saw.current.x) * 0.02 * speed;
-        // Add base horizontal movement
-        saw.current.x += saw.current.vx * speed * 0.7;
-        // Randomly reverse direction
-        if (Math.random() < 0.01) {
-            saw.current.vx *= -1;
-        }
-        // If it hits a wall, it MUST reverse
-        if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) {
-            saw.current.vx *= -1;
-        }
-        break;
-      case 'zig-zag':
-      case 'accelerated zig-zag':
-        saw.current.x += saw.current.vx * speed;
-        if(saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
-        saw.current.y = GAME_HEIGHT - SAW_RADIUS - Math.abs(Math.sin(saw.current.x / 100)) * 50;
-        break;
-      case 'sinusoidal wave':
-      case 'complex wave':
-        saw.current.x = (GAME_WIDTH/2) + Math.sin(saw.current.time * speed / 2) * (GAME_WIDTH / 2 - SAW_RADIUS);
-        break;
-      case 'homes in on the player slightly':
-         saw.current.x += (targetX - saw.current.x) * 0.01 * speed;
-         saw.current.x += saw.current.vx * speed * 0.5;
-         if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
-        break;
-      case 'erratic movement with short teleports':
-        if(Math.random() < 0.01) {
-            saw.current.x = Math.random() * (GAME_WIDTH - SAW_RADIUS * 2) + SAW_RADIUS;
-        } else {
-            saw.current.x += saw.current.vx * speed;
-            if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
-        }
-        break;
-      default: // 'steady horizontal' and fallbacks
-        saw.current.x += saw.current.vx * speed;
-        if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
-    }
+    let minDistanceToSaw = Infinity;
 
+    const updatedSaws = saws.map(saw => {
+        saw.angle += 0.25;
+        saw.time += deltaTime;
+        const speed = saw.speedMultiplier * 2.5;
+        
+        const targetX = ball.current.x;
+        const targetY = ball.current.y;
+        
+        let moveAxis: 'x' | 'y' = 'x';
+        if (saw.spawnEdge === 'left' || saw.spawnEdge === 'right') {
+            moveAxis = 'y';
+        }
 
-    const ballSawDx = ball.current.x - saw.current.x;
-    const ballSawDy = ball.current.y - saw.current.y;
-    const distance = Math.sqrt(ballSawDx * ballSawDx + ballSawDy * ballSawDy);
-    
-    if (distance < BALL_RADIUS + SAW_RADIUS * 1.5 && distance > BALL_RADIUS + SAW_RADIUS) {
+        switch(saw.pattern) {
+            case 'relentless homing with random reversal':
+                if (moveAxis === 'x') {
+                    saw.x += (targetX - saw.x) * 0.02 * speed;
+                    saw.x += saw.vx * speed * 0.7;
+                    if (Math.random() < 0.01) saw.vx *= -1;
+                    if (saw.x > GAME_WIDTH + SAW_RADIUS || saw.x < -SAW_RADIUS) saw.vx *= -1;
+                } else {
+                    saw.y += (targetY - saw.y) * 0.02 * speed;
+                    saw.y += saw.vy * speed * 0.7;
+                    if (Math.random() < 0.01) saw.vy *= -1;
+                    if (saw.y > GAME_HEIGHT + SAW_RADIUS || saw.y < -SAW_RADIUS) saw.vy *= -1;
+                }
+                break;
+            default: // 'steady' and fallbacks
+                if (moveAxis === 'x') {
+                    saw.x += saw.vx * speed;
+                    if (saw.x > GAME_WIDTH + SAW_RADIUS * 2) saw.x = -SAW_RADIUS;
+                    if (saw.x < -SAW_RADIUS * 2) saw.x = GAME_WIDTH + SAW_RADIUS;
+                } else { // 'y' axis
+                    saw.y += saw.vy * speed;
+                    if (saw.y > GAME_HEIGHT + SAW_RADIUS * 2) saw.y = -SAW_RADIUS;
+                    if (saw.y < -SAW_RADIUS * 2) saw.y = GAME_HEIGHT + SAW_RADIUS;
+                }
+        }
+
+        const ballSawDx = ball.current.x - saw.x;
+        const ballSawDy = ball.current.y - saw.y;
+        const distance = Math.sqrt(ballSawDx * ballSawDx + ballSawDy * ballSawDy);
+        minDistanceToSaw = Math.min(minDistanceToSaw, distance);
+
+        if (distance < BALL_RADIUS + SAW_RADIUS) {
+            if (lives - 1 > 0) {
+                fetchCommentary('lostLife');
+                setLives(l => l - 1);
+                ball.current.x = GAME_WIDTH / 2;
+                ball.current.y = 100;
+                ball.current.px = GAME_WIDTH / 2;
+                ball.current.py = 99;
+                return null;
+            } else {
+                fetchCommentary('gameOver');
+                setLives(0);
+                setGameState(GameState.GameOver);
+                canvasRef.current.style.animation = 'shake 0.5s';
+                setTimeout(() => {
+                    if (canvasRef.current) canvasRef.current.style.animation = '';
+                }, 500);
+                return null; 
+            }
+        }
+        return saw;
+    }).filter((saw): saw is Saw => saw !== null);
+
+    if (minDistanceToSaw < NEAR_MISS_DISTANCE * 2) {
         fetchCommentary('nearMiss');
     }
+    updateBallExpression(minDistanceToSaw);
 
-    if (distance < BALL_RADIUS + SAW_RADIUS) {
-      if (lives - 1 > 0) {
-        fetchCommentary('lostLife');
-        setLives(l => l - 1);
-        ball.current.x = GAME_WIDTH/2;
-        ball.current.y = 100;
-        ball.current.px = GAME_WIDTH/2;
-        ball.current.py = 99;
-        // No toast to make it more frustrating
-      } else {
-        fetchCommentary('gameOver');
-        setLives(0);
-        setGameState(GameState.GameOver);
-        canvasRef.current.style.animation = 'shake 0.5s';
-        setTimeout(() => {
-          if(canvasRef.current) canvasRef.current.style.animation = '';
-        }, 500);
-        return;
-      }
-    }
+    setSaws(updatedSaws);
 
 
-    // --- DRAWING ---
     ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     ctx.beginPath();
@@ -253,7 +299,8 @@ const RopeSurvivalGame = () => {
     ctx.strokeStyle = ropeColor.current;
     ctx.lineWidth = 3;
     ctx.stroke();
-
+    
+    // Draw ball with expression
     ctx.beginPath();
     ctx.arc(ball.current.x, ball.current.y, BALL_RADIUS, 0, Math.PI * 2);
     ctx.fillStyle = 'hsl(var(--primary))';
@@ -261,30 +308,65 @@ const RopeSurvivalGame = () => {
     ctx.shadowBlur = 15;
     ctx.fill();
     ctx.shadowBlur = 0;
+    
+    // Eyes
+    const eyeOffsetX = BALL_RADIUS * 0.3;
+    const eyeOffsetY = BALL_RADIUS * 0.2;
+    const eyeRadius = BALL_RADIUS * 0.15;
+    ctx.fillStyle = '#000';
+    if(ballExpression === 'scared'){
+        // Wide eyes
+        ctx.beginPath();
+        ctx.arc(ball.current.x - eyeOffsetX, ball.current.y - eyeOffsetY, eyeRadius * 1.5, 0, Math.PI * 2);
+        ctx.arc(ball.current.x + eyeOffsetX, ball.current.y - eyeOffsetY, eyeRadius * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+    } else if (ballExpression === 'relieved') {
+        // Relaxed eyes (like ^ ^)
+        ctx.beginPath();
+        ctx.moveTo(ball.current.x - eyeOffsetX - eyeRadius, ball.current.y - eyeOffsetY + eyeRadius);
+        ctx.lineTo(ball.current.x - eyeOffsetX, ball.current.y - eyeOffsetY - eyeRadius);
+        ctx.lineTo(ball.current.x - eyeOffsetX + eyeRadius, ball.current.y - eyeOffsetY + eyeRadius);
+        ctx.moveTo(ball.current.x + eyeOffsetX - eyeRadius, ball.current.y - eyeOffsetY + eyeRadius);
+        ctx.lineTo(ball.current.x + eyeOffsetX, ball.current.y - eyeOffsetY - eyeRadius);
+        ctx.lineTo(ball.current.x + eyeOffsetX + eyeRadius, ball.current.y - eyeOffsetY + eyeRadius);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
-    ctx.save();
-    ctx.translate(saw.current.x, saw.current.y);
-    ctx.rotate(saw.current.angle);
-    ctx.beginPath();
-    for (let i = 0; i < 16; i++) {
-        const angle = (i / 16) * Math.PI * 2;
-        const x_ = Math.cos(angle) * SAW_RADIUS;
-        const y_ = Math.sin(angle) * SAW_RADIUS;
-        const x2_ = Math.cos(angle + (Math.PI*2/32)) * (SAW_RADIUS - 10);
-        const y2_ = Math.sin(angle + (Math.PI*2/32)) * (SAW_RADIUS - 10);
-        ctx.moveTo(x2_, y2_);
-        ctx.lineTo(x_, y_);
+    } else {
+        // Normal eyes
+        ctx.beginPath();
+        ctx.arc(ball.current.x - eyeOffsetX, ball.current.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+        ctx.arc(ball.current.x + eyeOffsetX, ball.current.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+        ctx.fill();
     }
-    ctx.closePath();
-    ctx.fillStyle = '#C0C0C0';
-    ctx.fill();
-    ctx.strokeStyle = 'hsl(var(--destructive))';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-    ctx.restore();
+
+
+    saws.forEach(saw => {
+        ctx.save();
+        ctx.translate(saw.x, saw.y);
+        ctx.rotate(saw.angle);
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+            const angle = (i / 16) * Math.PI * 2;
+            const x_ = Math.cos(angle) * SAW_RADIUS;
+            const y_ = Math.sin(angle) * SAW_RADIUS;
+            const x2_ = Math.cos(angle + (Math.PI*2/32)) * (SAW_RADIUS - 10);
+            const y2_ = Math.sin(angle + (Math.PI*2/32)) * (SAW_RADIUS - 10);
+            ctx.moveTo(x2_, y2_);
+            ctx.lineTo(x_, y_);
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#C0C0C0';
+        ctx.fill();
+        ctx.strokeStyle = 'hsl(var(--destructive))';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.restore();
+    });
     
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [gameState, lives, toast, difficulty, fetchCommentary]);
+  }, [gameState, lives, toast, difficulty, fetchCommentary, saws, updateBallExpression]);
 
   useEffect(() => {
     if (gameState === GameState.Playing) {
@@ -319,15 +401,13 @@ const RopeSurvivalGame = () => {
     setLives(INITIAL_LIVES);
     setDifficulty(1);
     setCommentary('');
+    setSaws([]);
     fetchCommentary('gameStart');
     const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
     setPurchasedLives(savedPurchasedLives);
     
     ball.current = {
       x: GAME_WIDTH / 2, y: 200, px: GAME_WIDTH / 2, py: 199,
-    };
-    saw.current = {
-      x: 0, y: GAME_HEIGHT - SAW_RADIUS, angle: 0, vx: 2, pattern: 'steady horizontal', speedMultiplier: 1.5, time: 0,
     };
     
     setGameState(GameState.Playing);
@@ -339,7 +419,7 @@ const RopeSurvivalGame = () => {
       const newPurchasedCount = purchasedLives + 1;
       setPurchasedLives(newPurchasedCount);
       localStorage.setItem('ropeSurvivalPurchasedLives', newPurchasedCount.toString());
-      setLives(1); // Give one life to continue
+      setLives(1);
       setGameState(GameState.Playing);
     } else {
       toast({ title: "Max lives purchased", description: "You cannot buy more lives this round.", variant: "destructive" });
@@ -348,7 +428,7 @@ const RopeSurvivalGame = () => {
   
   const watchAdForLife = () => {
     toast({ title: "Ad Finished", description: "You earned a free life!" });
-    setLives(1); // Give one life to continue
+    setLives(1);
     setGameState(GameState.Playing);
   };
 
@@ -420,3 +500,5 @@ const RopeSurvivalGame = () => {
 };
 
 export default RopeSurvivalGame;
+
+    
