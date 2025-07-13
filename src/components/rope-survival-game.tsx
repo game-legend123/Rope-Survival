@@ -299,7 +299,11 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     };
     
     const interval = setInterval(manageGame, 2000); 
-    const commentaryInterval = setInterval(() => fetchCommentary('nearMiss'), 6000);
+    const commentaryInterval = setInterval(() => {
+        if (!globalGameState.isPaused) {
+            fetchCommentary('nearMiss');
+        }
+    }, 6000);
 
 
     return () => {
@@ -487,13 +491,6 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       
       let finalSaws = updatedSaws;
       if (isPlayerControlled) {
-          const sawsToRespawn = updatedSaws.filter(saw => 
-              saw.x < -SAW_RADIUS * 2 || saw.x > GAME_WIDTH + SAW_RADIUS * 2 ||
-              saw.y < -SAW_RADIUS * 2 || saw.y > GAME_HEIGHT + SAW_RADIUS * 2
-          );
-          
-          finalSaws = updatedSaws.filter(saw => !sawsToRespawn.find(s => s.id === saw.id));
-
           if (finalSaws.length < SAW_COUNT) {
               const numToAdd = SAW_COUNT - finalSaws.length;
               for (let i = 0; i < numToAdd; i++) {
@@ -507,7 +504,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
       }
       
       if (isPlayerControlled && minDistanceToSaw < NEAR_MISS_DISTANCE && Math.random() < 0.02) { 
-          fetchCommentary('nearMiss');
+        if (!globalGameState.isPaused) fetchCommentary('nearMiss');
       }
       updateBallExpression(minDistanceToSaw);
     }
