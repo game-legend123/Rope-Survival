@@ -48,12 +48,9 @@ const commentaryFlow = ai.defineFlow(
     outputSchema: GenerateCommentaryOutputSchema,
   },
   async input => {
-    // Reduce the chance of the AI being called to save on API calls.
-    if (input.event === 'nearMiss' && Math.random() > 0.25) {
-      return { commentary: '' };
-    }
-    
     const {output} = await prompt(input);
     return output!;
   }
 );
+
+    

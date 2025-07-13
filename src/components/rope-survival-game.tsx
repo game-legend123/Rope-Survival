@@ -224,36 +224,31 @@ const RopeSurvivalGame = () => {
     const updatedSaws = saws.map(saw => {
         saw.angle += 0.25;
         saw.time += deltaTime;
-        const speed = saw.speedMultiplier; // Directly use speed multiplier
+        const speed = saw.speedMultiplier;
         
         const targetX = ball.current.x;
         const targetY = ball.current.y;
         
-        switch(saw.pattern) {
-            case 'relentless homing with random reversal':
-                const homingFactor = 0.015 * speed; // Increased homing
-                saw.vx += (targetX - saw.x) * homingFactor * 0.1;
-                saw.vy += (targetY - saw.y) * homingFactor * 0.1;
-                
-                // Cap velocity
-                const maxSpeed = 5 * speed;
-                const currentSpeed = Math.sqrt(saw.vx**2 + saw.vy**2);
-                if (currentSpeed > maxSpeed) {
-                    saw.vx = (saw.vx / currentSpeed) * maxSpeed;
-                    saw.vy = (saw.vy / currentSpeed) * maxSpeed;
-                }
-                
-                saw.x += saw.vx;
-                saw.y += saw.vy;
+        // All saws now have homing behavior
+        const homingFactor = 0.015 * speed;
+        saw.vx += (targetX - saw.x) * homingFactor * 0.1;
+        saw.vy += (targetY - saw.y) * homingFactor * 0.1;
 
-                if (Math.random() < 0.015) { // More frequent reversal
-                   if (Math.random() > 0.5) saw.vx *= -1.2;
-                   else saw.vy *= -1.2;
-                }
-                break;
-            default: // 'steady' and other patterns
-                saw.x += saw.vx * speed;
-                saw.y += saw.vy * speed;
+        // Cap velocity
+        const maxSpeed = 5 * speed;
+        const currentSpeed = Math.sqrt(saw.vx**2 + saw.vy**2);
+        if (currentSpeed > maxSpeed) {
+            saw.vx = (saw.vx / currentSpeed) * maxSpeed;
+            saw.vy = (saw.vy / currentSpeed) * maxSpeed;
+        }
+        
+        saw.x += saw.vx;
+        saw.y += saw.vy;
+
+        // Random reversal for higher difficulty saws
+        if (saw.pattern.includes('reversal') && Math.random() < 0.015) {
+           if (Math.random() > 0.5) saw.vx *= -1.2;
+           else saw.vy *= -1.2;
         }
 
         // Screen wrap
@@ -507,3 +502,5 @@ const RopeSurvivalGame = () => {
 };
 
 export default RopeSurvivalGame;
+
+    
