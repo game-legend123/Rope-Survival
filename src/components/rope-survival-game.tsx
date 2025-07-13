@@ -3,7 +3,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ShoppingCart, Settings, Heart, MessageSquareText, Send, Pause, Play } from 'lucide-react';
-import { getNewSawPattern, getAICommentary } from '@/app/actions';
+import { getNewSawPattern, getAICommentary, checkApiStatus } from '@/app/actions';
 import { GameOverDialog } from './game-over-dialog';
 import { ShopDialog } from './shop-dialog';
 import { useToast } from "@/hooks/use-toast";
@@ -661,6 +661,16 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     globalGameState.setPaused(!globalGameState.isPaused);
   };
 
+  const handleApiTest = async () => {
+    toast({ title: 'Đang kiểm tra API...', description: 'Vui lòng đợi trong giây lát.' });
+    const result = await checkApiStatus();
+    toast({
+      title: result.success ? 'Thành công' : 'Thất bại',
+      description: result.message,
+      variant: result.success ? 'default' : 'destructive',
+    });
+  };
+
   const gameContainerHeight = isPlayerControlled ? GAME_HEIGHT + 100 : GAME_HEIGHT;
 
   return (
@@ -701,7 +711,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           <Button variant="ghost" size="icon" onClick={() => setShopOpen(true)}>
               <ShoppingCart className="w-6 h-6" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={handleApiTest}>
               <Settings className="w-6 h-6" />
           </Button>
           </div>
