@@ -737,8 +737,12 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           onMouseMove={handleMouseMove}
         />
         {gameState === GameState.Paused && (
-          <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-30 pointer-events-auto rounded-lg">
-              <h2 className="text-5xl font-bold text-white">Paused</h2>
+          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-30 rounded-lg">
+              <h2 className="text-5xl font-bold text-white mb-4">Paused</h2>
+              <Button onClick={togglePause} size="lg" className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                <Play className="w-6 h-6 mr-2"/>
+                Resume
+              </Button>
           </div>
         )}
       </div>
