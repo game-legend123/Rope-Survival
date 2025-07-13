@@ -4,35 +4,15 @@
  * @fileOverview A flow for generating saw blade movement patterns with increasing difficulty.
  *
  * - generateSawPattern - A function that generates saw blade movement patterns.
- * - GenerateSawPatternInput - The input type for the generateSawPattern function.
- * - GenerateSawPatternOutput - The return type for the generateSawPattern function.
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-
-const GenerateSawPatternInputSchema = z.object({
-  difficulty: z
-    .number()
-    .describe(
-      'A number representing the difficulty level, increasing linearly over time.'
-    ),
-});
-export type GenerateSawPatternInput = z.infer<typeof GenerateSawPatternInputSchema>;
-
-const GenerateSawPatternOutputSchema = z.object({
-  pattern: z
-    .string()
-    .describe(
-      'A description of the saw blade movement pattern, such as zig-zag, sudden acceleration, etc.'
-    ),
-  speedMultiplier: z
-    .number()
-    .describe(
-      'A multiplier for the saw blade speed, increasing with difficulty.'
-    ),
-});
-export type GenerateSawPatternOutput = z.infer<typeof GenerateSawPatternOutputSchema>;
+import {
+  GenerateSawPatternInputSchema,
+  GenerateSawPatternOutputSchema,
+  type GenerateSawPatternInput,
+  type GenerateSawPatternOutput,
+} from './types';
 
 export async function generateSawPattern(
   input: GenerateSawPatternInput
@@ -44,22 +24,23 @@ const prompt = ai.definePrompt({
   name: 'generateSawPatternPrompt',
   input: {schema: GenerateSawPatternInputSchema},
   output: {schema: GenerateSawPatternOutputSchema},
-  prompt: `You are an expert game designer, tasked with creating increasingly challenging saw blade movement patterns for a survival game.
+  prompt: `You are an expert game designer, tasked with creating increasingly challenging and frustrating saw blade movement patterns for a survival game. The goal is to make the player feel challenged and even a little bit angry.
 
   The difficulty level is: {{{difficulty}}}
 
-  Based on the difficulty level, generate a new saw blade movement pattern and a corresponding speed multiplier. The pattern should become more complex and the speed should increase as the difficulty increases linearly.  Respond using JSON format.
+  Based on the difficulty level, generate a new saw blade movement pattern and a corresponding speed multiplier. The pattern should become more complex, unpredictable, and downright unfair as the difficulty increases linearly. Respond using JSON format.
 
-  Difficulty 1: steady horizontal movement, speed multiplier 1.0
-  Difficulty 2: sudden direction changes, speed multiplier 1.2
-  Difficulty 3: double speed, speed multiplier 2.0
-  Difficulty 4: zig-zag movement, speed multiplier 2.5
-  Difficulty 5: accelerated zig-zag, speed multiplier 3.0
-  Difficulty 6: sinusoidal wave, speed multiplier 3.5
-  Difficulty 7: complex wave, speed multiplier 4.0
-  Difficulty 8: erratic movement, speed multiplier 4.5
-  Difficulty 9: very erratic movement, speed multiplier 5.0
-  Difficulty 10: extremely erratic movement, speed multiplier 5.5
+  Here are some examples of frustrating patterns, you can create your own variations.
+  Difficulty 1: steady horizontal movement, speed multiplier 1.5
+  Difficulty 2: sudden direction changes, speed multiplier 1.8
+  Difficulty 3: accelerates and decelerates randomly, speed multiplier 2.2
+  Difficulty 4: fast zig-zag movement, speed multiplier 2.8
+  Difficulty 5: sinusoidal wave with changing amplitude, speed multiplier 3.5
+  Difficulty 6: homes in on the player slightly, speed multiplier 4.0
+  Difficulty 7: complex wave with sudden speed boosts, speed multiplier 4.5
+  Difficulty 8: erratic movement with short teleports, speed multiplier 5.0
+  Difficulty 9: combination of homing and teleporting, speed multiplier 5.5
+  Difficulty 10: extremely erratic, fast, and homing movement, speed multiplier 6.0
 
   Output in JSON format:
   {

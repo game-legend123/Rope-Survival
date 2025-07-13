@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ShoppingCart, Settings, Heart } from 'lucide-react';
-import { getNewSawPattern } from '@/app/actions';
+import { ShoppingCart, Settings, Heart, MessageSquareText } from 'lucide-react';
+import { getNewSawPattern, getAICommentary } from '@/app/actions';
 import { GameOverDialog } from './game-over-dialog';
 import { ShopDialog } from './shop-dialog';
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +15,7 @@ const GRAVITY = 0.5;
 const DAMPING = 0.995;
 const SAW_RADIUS = 40;
 const BALL_RADIUS = 15;
-const INITIAL_LIVES = 1;
+const INITIAL_LIVES = 3;
 const MAX_PURCHASED_LIVES = 3;
 
 // Game states
@@ -38,6 +38,7 @@ const RopeSurvivalGame = () => {
   const [lives, setLives] = useState(INITIAL_LIVES);
   const [purchasedLives, setPurchasedLives] = useState(0);
   const [difficulty, setDifficulty] = useState(1);
+  const [commentary, setCommentary] = useState('');
   
   // Modals
   const [isShopOpen, setShopOpen] = useState(false);
@@ -59,13 +60,26 @@ const RopeSurvivalGame = () => {
     angle: 0,
     vx: 2,
     pattern: 'steady horizontal',
-    speedMultiplier: 1,
+    speedMultiplier: 1.5,
     time: 0,
   });
   
   // Customization
   const [currentSkinId, setCurrentSkinId] = useState('default');
   const ropeColor = useRef('#FFFFFF');
+
+  const fetchCommentary = useCallback(async (event: 'lostLife' | 'levelUp' | 'gameStart' | 'gameOver' | 'nearMiss') => {
+      const currentScore = Math.floor(score / 10);
+      try {
+        const result = await getAICommentary({ score: currentScore, difficulty, event });
+        if (result.commentary) {
+          setCommentary(result.commentary);
+        }
+      } catch (e) {
+        // silently fail
+        console.error(e);
+      }
+  }, [score, difficulty]);
   
   // Load state from localStorage
   useEffect(() => {
@@ -75,6 +89,7 @@ const RopeSurvivalGame = () => {
     }
     const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
     setPurchasedLives(savedPurchasedLives);
+    fetchCommentary('gameStart');
   }, []);
 
   const handleSelectSkin = (skinId: string, showToast: boolean = true) => {
@@ -101,18 +116,15 @@ const RopeSurvivalGame = () => {
     const interval = setInterval(async () => {
       const newDifficulty = difficulty + 1;
       setDifficulty(newDifficulty);
-      toast({
-        title: `Stage ${newDifficulty}`,
-        description: 'The saw is getting more dangerous!',
-      });
+      fetchCommentary('levelUp');
       const newPattern = await getNewSawPattern({ difficulty: newDifficulty });
       saw.current.pattern = newPattern.pattern;
       saw.current.speedMultiplier = newPattern.speedMultiplier;
       saw.current.time = 0; // Reset time for patterns that use it
-    }, 15000);
+    }, 10000); // Increased difficulty frequency
 
     return () => clearInterval(interval);
-  }, [gameState, difficulty, toast]);
+  }, [gameState, difficulty, toast, fetchCommentary]);
 
   // Game Loop
   const gameLoop = useCallback((timestamp: number) => {
@@ -152,9 +164,12 @@ const RopeSurvivalGame = () => {
     ball.current.x += offsetX;
     ball.current.y += offsetY;
 
-    saw.current.angle += 0.2;
+    saw.current.angle += 0.25; // Faster spin
     saw.current.time += deltaTime;
-    const speed = saw.current.speedMultiplier * 2;
+    const speed = saw.current.speedMultiplier * 2.5; // Increased base speed
+    
+    // More complex saw patterns
+    const targetX = ball.current.x;
     switch(saw.current.pattern) {
       case 'zig-zag':
       case 'accelerated zig-zag':
@@ -166,24 +181,44 @@ const RopeSurvivalGame = () => {
       case 'complex wave':
         saw.current.x = (GAME_WIDTH/2) + Math.sin(saw.current.time * speed / 2) * (GAME_WIDTH / 2 - SAW_RADIUS);
         break;
-      default:
+      case 'homes in on the player slightly':
+         saw.current.x += (targetX - saw.current.x) * 0.01 * speed;
+         saw.current.x += saw.current.vx * speed * 0.5;
+         if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
+        break;
+      case 'erratic movement with short teleports':
+        if(Math.random() < 0.01) {
+            saw.current.x = Math.random() * (GAME_WIDTH - SAW_RADIUS * 2) + SAW_RADIUS;
+        } else {
+            saw.current.x += saw.current.vx * speed;
+            if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
+        }
+        break;
+      default: // 'steady horizontal' and fallbacks
         saw.current.x += saw.current.vx * speed;
         if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) saw.current.vx *= -1;
     }
 
+
     const ballSawDx = ball.current.x - saw.current.x;
     const ballSawDy = ball.current.y - saw.current.y;
     const distance = Math.sqrt(ballSawDx * ballSawDx + ballSawDy * ballSawDy);
+    
+    if (distance < BALL_RADIUS + SAW_RADIUS * 1.5 && distance > BALL_RADIUS + SAW_RADIUS) {
+        fetchCommentary('nearMiss');
+    }
 
     if (distance < BALL_RADIUS + SAW_RADIUS) {
       if (lives - 1 > 0) {
+        fetchCommentary('lostLife');
         setLives(l => l - 1);
         ball.current.x = GAME_WIDTH/2;
         ball.current.y = 100;
         ball.current.px = GAME_WIDTH/2;
         ball.current.py = 99;
-        toast({ title: 'Ouch!', description: 'You lost a life!', variant: 'destructive'});
+        // No toast to make it more frustrating
       } else {
+        fetchCommentary('gameOver');
         setLives(0);
         setGameState(GameState.GameOver);
         canvasRef.current.style.animation = 'shake 0.5s';
@@ -235,7 +270,7 @@ const RopeSurvivalGame = () => {
     ctx.restore();
     
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [gameState, lives, toast, difficulty]);
+  }, [gameState, lives, toast, difficulty, fetchCommentary]);
 
   useEffect(() => {
     if (gameState === GameState.Playing) {
@@ -269,6 +304,8 @@ const RopeSurvivalGame = () => {
     setScore(0);
     setLives(INITIAL_LIVES);
     setDifficulty(1);
+    setCommentary('');
+    fetchCommentary('gameStart');
     const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
     setPurchasedLives(savedPurchasedLives);
     
@@ -276,7 +313,7 @@ const RopeSurvivalGame = () => {
       x: GAME_WIDTH / 2, y: 200, px: GAME_WIDTH / 2, py: 199,
     };
     saw.current = {
-      x: 0, y: GAME_HEIGHT - SAW_RADIUS, angle: 0, vx: 2, pattern: 'steady horizontal', speedMultiplier: 1, time: 0,
+      x: 0, y: GAME_HEIGHT - SAW_RADIUS, angle: 0, vx: 2, pattern: 'steady horizontal', speedMultiplier: 1.5, time: 0,
     };
     
     setGameState(GameState.Playing);
@@ -309,6 +346,13 @@ const RopeSurvivalGame = () => {
           10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
           20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; transform: translateY(10px); }
+            10%, 90% { opacity: 1; transform: translateY(0); }
+        }
+        .commentary {
+            animation: fadeInOut 4s ease-in-out forwards;
+        }
       `}</style>
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 pointer-events-none">
         <h1 className="text-4xl font-headline font-bold text-white [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]">SCORE: {Math.floor(score/10)}</h1>
@@ -325,6 +369,14 @@ const RopeSurvivalGame = () => {
           </Button>
         </div>
       </div>
+
+      {commentary && (
+        <div key={commentary} className="commentary absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 text-white p-2 rounded-lg flex items-center gap-2 z-20">
+            <MessageSquareText className="w-5 h-5 text-primary" />
+            <p className="font-bold">{commentary}</p>
+        </div>
+      )}
+
       <canvas
         ref={canvasRef}
         width={GAME_WIDTH}

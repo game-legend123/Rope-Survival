@@ -1,6 +1,8 @@
 'use server';
 
-import { generateSawPattern, GenerateSawPatternInput, GenerateSawPatternOutput } from '@/ai/flows/generate-saw-pattern';
+import { generateSawPattern } from '@/ai/flows/generate-saw-pattern';
+import { generateCommentary } from '@/ai/flows/generate-commentary';
+import type { GenerateSawPatternInput, GenerateSawPatternOutput, GenerateCommentaryInput, GenerateCommentaryOutput } from '@/ai/flows/types';
 
 export async function getNewSawPattern(input: GenerateSawPatternInput): Promise<GenerateSawPatternOutput> {
   try {
@@ -13,5 +15,15 @@ export async function getNewSawPattern(input: GenerateSawPatternInput): Promise<
       pattern: 'steady horizontal',
       speedMultiplier: input.difficulty * 0.5 + 0.5, // Simple fallback
     };
+  }
+}
+
+export async function getAICommentary(input: GenerateCommentaryInput): Promise<GenerateCommentaryOutput> {
+  try {
+    const result = await generateCommentary(input);
+    return result;
+  } catch (error) {
+    console.error("Error getting AI commentary:", error);
+    return { commentary: "..." };
   }
 }
