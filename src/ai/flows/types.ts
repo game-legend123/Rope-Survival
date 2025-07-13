@@ -1,4 +1,3 @@
-'use server';
 /**
  * @fileOverview Shared types and schemas for Genkit flows.
  */
