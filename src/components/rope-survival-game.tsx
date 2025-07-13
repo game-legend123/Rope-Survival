@@ -407,20 +407,18 @@ const RopeSurvivalGame = () => {
   }, [gameState, gameLoop]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (gameState !== GameState.Playing) return;
+    if (gameState !== GameState.Playing || !canvasRef.current) return;
     const rect = canvasRef.current!.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Control rope length with mouse Y position
+    ropeLength.current = Math.max(50, Math.min(GAME_HEIGHT - 20, mouseY));
+
+    // Apply horizontal force
     const forceX = (mouseX - ropeAnchor.current.x) * 0.002;
     ball.current.x += forceX;
   };
-  
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.button === 0) ropeLength.current = Math.max(100, ropeLength.current - 20);
-  }
-  
-  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-     if (e.button === 0) ropeLength.current = Math.min(300, ropeLength.current + 20);
-  }
 
   const restartGame = () => {
     setScore(0);
@@ -504,8 +502,6 @@ const RopeSurvivalGame = () => {
         height={GAME_HEIGHT}
         className="bg-background rounded-lg shadow-2xl border-2 border-border cursor-pointer absolute top-0 left-0"
         onMouseMove={handleMouseMove}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
       />
       <div className="absolute bottom-0 left-0 w-full p-4 bg-background/80 backdrop-blur-sm rounded-b-lg">
           <form onSubmit={handlePlayerReply} className="flex items-center gap-2">
