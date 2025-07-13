@@ -78,6 +78,7 @@ const RopeSurvivalGame = () => {
     const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
     setPurchasedLives(savedPurchasedLives);
     fetchCommentary('gameStart');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSelectSkin = (skinId: string, showToast: boolean = true) => {
@@ -86,7 +87,7 @@ const RopeSurvivalGame = () => {
     let skinName = 'Classic White';
     if (skinId === 'default') ropeColor.current = '#FFFFFF';
     if (skinId === 'neon-blue') { ropeColor.current = '#00BFFF'; skinName = 'Neon Blue'; }
-    if (skinId === 'fabric') { ropeColor.current = '#D2B48C'; skinName = 'Fabric Texture'; }
+    if (skinId === 'fabric') { ropeColor.current = '#D2B48C'; skinName = 'Fabric Weave'; }
     if (skinId === 'metal') { ropeColor.current = '#C0C0C0'; skinName = 'Metal Chain'; }
 
     if (showToast) {
@@ -117,22 +118,26 @@ const RopeSurvivalGame = () => {
         case 'bottom':
             newSaw.x = Math.random() * GAME_WIDTH;
             newSaw.y = GAME_HEIGHT + SAW_RADIUS;
-            newSaw.vx = Math.random() > 0.5 ? 2 : -2;
+            newSaw.vx = (Math.random() - 0.5) * 4;
+            newSaw.vy = -2;
             break;
         case 'top':
             newSaw.x = Math.random() * GAME_WIDTH;
             newSaw.y = -SAW_RADIUS;
-            newSaw.vx = Math.random() > 0.5 ? 2 : -2;
+            newSaw.vx = (Math.random() - 0.5) * 4;
+            newSaw.vy = 2;
             break;
         case 'left':
             newSaw.x = -SAW_RADIUS;
             newSaw.y = Math.random() * GAME_HEIGHT;
-            newSaw.vy = Math.random() > 0.5 ? 2 : -2;
+            newSaw.vx = 2;
+            newSaw.vy = (Math.random() - 0.5) * 4;
             break;
         case 'right':
             newSaw.x = GAME_WIDTH + SAW_RADIUS;
             newSaw.y = Math.random() * GAME_HEIGHT;
-            newSaw.vy = Math.random() > 0.5 ? 2 : -2;
+            newSaw.vx = -2;
+            newSaw.vy = (Math.random() - 0.5) * 4;
             break;
     }
 
@@ -143,13 +148,13 @@ const RopeSurvivalGame = () => {
     if (gameState !== GameState.Playing) return;
 
     const manageSaws = async () => {
-        const newDifficulty = Math.floor(score / 1000) + 1;
+        const newDifficulty = Math.floor(score / 100) + 1; // Faster difficulty increase
         if(newDifficulty > difficulty) {
             setDifficulty(newDifficulty);
             fetchCommentary('levelUp');
         }
 
-        const maxSaws = Math.min(2 + Math.floor(difficulty / 2), 5);
+        const maxSaws = Math.min(1 + Math.floor(difficulty / 2), 6);
 
         if (saws.length < maxSaws) {
             try {
@@ -163,7 +168,7 @@ const RopeSurvivalGame = () => {
         }
     };
     
-    const interval = setInterval(manageSaws, 3000); 
+    const interval = setInterval(manageSaws, 2000); // More frequent saw spawning
 
     return () => clearInterval(interval);
   }, [gameState, difficulty, score, saws.length, addNewSaw, fetchCommentary]);
@@ -219,41 +224,43 @@ const RopeSurvivalGame = () => {
     const updatedSaws = saws.map(saw => {
         saw.angle += 0.25;
         saw.time += deltaTime;
-        const speed = saw.speedMultiplier * 2.5;
+        const speed = saw.speedMultiplier; // Directly use speed multiplier
         
         const targetX = ball.current.x;
         const targetY = ball.current.y;
         
-        let moveAxis: 'x' | 'y' = 'x';
-        if (saw.spawnEdge === 'left' || saw.spawnEdge === 'right') {
-            moveAxis = 'y';
-        }
-
         switch(saw.pattern) {
             case 'relentless homing with random reversal':
-                if (moveAxis === 'x') {
-                    saw.x += (targetX - saw.x) * 0.02 * speed;
-                    saw.x += saw.vx * speed * 0.7;
-                    if (Math.random() < 0.01) saw.vx *= -1;
-                    if (saw.x > GAME_WIDTH + SAW_RADIUS || saw.x < -SAW_RADIUS) saw.vx *= -1;
-                } else {
-                    saw.y += (targetY - saw.y) * 0.02 * speed;
-                    saw.y += saw.vy * speed * 0.7;
-                    if (Math.random() < 0.01) saw.vy *= -1;
-                    if (saw.y > GAME_HEIGHT + SAW_RADIUS || saw.y < -SAW_RADIUS) saw.vy *= -1;
+                const homingFactor = 0.015 * speed; // Increased homing
+                saw.vx += (targetX - saw.x) * homingFactor * 0.1;
+                saw.vy += (targetY - saw.y) * homingFactor * 0.1;
+                
+                // Cap velocity
+                const maxSpeed = 5 * speed;
+                const currentSpeed = Math.sqrt(saw.vx**2 + saw.vy**2);
+                if (currentSpeed > maxSpeed) {
+                    saw.vx = (saw.vx / currentSpeed) * maxSpeed;
+                    saw.vy = (saw.vy / currentSpeed) * maxSpeed;
+                }
+                
+                saw.x += saw.vx;
+                saw.y += saw.vy;
+
+                if (Math.random() < 0.015) { // More frequent reversal
+                   if (Math.random() > 0.5) saw.vx *= -1.2;
+                   else saw.vy *= -1.2;
                 }
                 break;
-            default: // 'steady' and fallbacks
-                if (moveAxis === 'x') {
-                    saw.x += saw.vx * speed;
-                    if (saw.x > GAME_WIDTH + SAW_RADIUS * 2) saw.x = -SAW_RADIUS;
-                    if (saw.x < -SAW_RADIUS * 2) saw.x = GAME_WIDTH + SAW_RADIUS;
-                } else { // 'y' axis
-                    saw.y += saw.vy * speed;
-                    if (saw.y > GAME_HEIGHT + SAW_RADIUS * 2) saw.y = -SAW_RADIUS;
-                    if (saw.y < -SAW_RADIUS * 2) saw.y = GAME_HEIGHT + SAW_RADIUS;
-                }
+            default: // 'steady' and other patterns
+                saw.x += saw.vx * speed;
+                saw.y += saw.vy * speed;
         }
+
+        // Screen wrap
+        if (saw.x < -SAW_RADIUS) saw.x = GAME_WIDTH + SAW_RADIUS;
+        if (saw.x > GAME_WIDTH + SAW_RADIUS) saw.x = -SAW_RADIUS;
+        if (saw.y < -SAW_RADIUS) saw.y = GAME_HEIGHT + SAW_RADIUS;
+        if (saw.y > GAME_HEIGHT + SAW_RADIUS) saw.y = -SAW_RADIUS;
 
         const ballSawDx = ball.current.x - saw.x;
         const ballSawDy = ball.current.y - saw.y;
@@ -283,7 +290,7 @@ const RopeSurvivalGame = () => {
         return saw;
     }).filter((saw): saw is Saw => saw !== null);
 
-    if (minDistanceToSaw < NEAR_MISS_DISTANCE * 2) {
+    if (minDistanceToSaw < NEAR_MISS_DISTANCE * 2 && minDistanceToSaw > SAW_RADIUS + BALL_RADIUS) {
         fetchCommentary('nearMiss');
     }
     updateBallExpression(minDistanceToSaw);
@@ -500,5 +507,3 @@ const RopeSurvivalGame = () => {
 };
 
 export default RopeSurvivalGame;
-
-    
