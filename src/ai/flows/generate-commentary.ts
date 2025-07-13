@@ -46,6 +46,10 @@ const prompt = ai.definePrompt({
   {{/if}}
 
   Keep the commentary short, under 20 words. Respond in JSON format.`,
+  config: {
+    // Add temperature to make responses less deterministic and more creative.
+    temperature: 0.9,
+  }
 });
 
 const commentaryFlow = ai.defineFlow(

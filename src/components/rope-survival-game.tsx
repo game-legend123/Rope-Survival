@@ -161,8 +161,8 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
                 newSaw.y = GAME_HEIGHT + SAW_RADIUS;
                 break;
             case 'top':
-                newSaw.x = Math.random() * GAME_WIDTH;
-                newSaw.y = -SAW_RADIUS;
+                newSaw.x = -SAW_RADIUS;
+                newSaw.y = Math.random() * GAME_HEIGHT;
                 break;
             case 'left':
                 newSaw.x = -SAW_RADIUS;
@@ -174,8 +174,8 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
                 break;
         }
 
-        const targetX = ball.current.x + (Math.random() - 0.5) * 200; // Aim near the ball
-        const targetY = ball.current.y + (Math.random() - 0.5) * 200;
+        const targetX = GAME_WIDTH / 2 + (Math.random() - 0.5) * 400; // Aim near the center
+        const targetY = GAME_HEIGHT / 2 + (Math.random() - 0.5) * 300;
         const dx = targetX - newSaw.x;
         const dy = targetY - newSaw.y;
         const dist = Math.sqrt(dx*dx + dy*dy) || 1;
@@ -300,7 +300,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     
     const interval = setInterval(manageGame, 2000); 
     const commentaryInterval = setInterval(() => {
-        if (!globalGameState.isPaused) {
+        if (!globalGameState.isPaused && isPlayerControlled) {
             fetchCommentary('nearMiss');
         }
     }, 6000);
@@ -422,9 +422,11 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
           newSaw.time += deltaTime;
           const speed = newSaw.speedMultiplier * (isPlayerControlled && deathCount >= 5 ? 0.7 : 1);
           
-          const homingFactor = 0.005 * speed;
-          newSaw.vx += (ball.current.x - newSaw.x) * homingFactor * 0.1;
-          newSaw.vy += (ball.current.y - newSaw.y) * homingFactor * 0.1;
+          if (newSaw.pattern.includes('homing')) {
+            const homingFactor = 0.005 * speed;
+            newSaw.vx += (ball.current.x - newSaw.x) * homingFactor * 0.1;
+            newSaw.vy += (ball.current.y - newSaw.y) * homingFactor * 0.1;
+          }
 
           // Repulsion from other saws
           currentSaws.forEach(otherSaw => {
@@ -598,7 +600,7 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     
-    ropeLength.current = Math.max(50, Math.min(GAME_HEIGHT - 20, mouseY));
+    ropeLength.current = Math.max(50, Math.min(GAME_HEIGHT, mouseY));
     const forceX = (mouseX - ball.current.x) * 0.1; // More responsive horizontal movement
     const targetX = ball.current.x + forceX;
     ball.current.x = Math.max(BALL_RADIUS, Math.min(GAME_WIDTH - BALL_RADIUS, targetX));
@@ -618,7 +620,11 @@ const RopeSurvivalGame = ({ isPlayerControlled }: RopeSurvivalGameProps) => {
     setDifficulty(1);
 
     if (isPlayerControlled) {
-      initializeSaws(1);
+      // Clear all saws
+      globalGameState.setSaws([]);
+      // Initialize new saws after a short delay to ensure old ones are gone
+      setTimeout(() => initializeSaws(1), 100);
+      
       fetchCommentary('gameStart');
       const savedPurchasedLives = parseInt(localStorage.getItem('ropeSurvivalPurchasedLives') || '0', 10);
       setPurchasedLives(savedPurchasedLives);
