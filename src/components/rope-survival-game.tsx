@@ -171,6 +171,20 @@ const RopeSurvivalGame = () => {
     // More complex saw patterns
     const targetX = ball.current.x;
     switch(saw.current.pattern) {
+      case 'relentless homing with random reversal':
+        // Move towards the player
+        saw.current.x += (targetX - saw.current.x) * 0.02 * speed;
+        // Add base horizontal movement
+        saw.current.x += saw.current.vx * speed * 0.7;
+        // Randomly reverse direction
+        if (Math.random() < 0.01) {
+            saw.current.vx *= -1;
+        }
+        // If it hits a wall, it MUST reverse
+        if (saw.current.x > GAME_WIDTH - SAW_RADIUS || saw.current.x < SAW_RADIUS) {
+            saw.current.vx *= -1;
+        }
+        break;
       case 'zig-zag':
       case 'accelerated zig-zag':
         saw.current.x += saw.current.vx * speed;
